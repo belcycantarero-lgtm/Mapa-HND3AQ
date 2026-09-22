@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/L.Control.Locate.min.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <link rel="stylesheet" href="css/leaflet.photon.css">
+        <style>
+        #map {
+            width: 1236px;
+            height: 759px;
+        }
+        </style>
+        <title></title>
+    </head>
+    <body>
+        <div id="map">
+        </div>
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/L.Control.Locate.min.js"></script>
+        <script src="js/multi-style-layer.js"></script>
+        <script src="js/Leaflet.VectorGrid.js"></script>
+        <script src="js/leaflet-svg-shape-markers.min.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="js/leaflet.photon.js"></script>
+        <script src="data/20250513_112559_0703_Danl__0703DanlShpAldeasshp_2.js"></script>
+        <script src="data/ZONAS_INTERVENCION_OCHA_QGIS_3.js"></script>
+        <script src="data/Centros_Salud_Intervenidosshp_4.js"></script>
+        <script>
+        var highlightLayer;
+        function highlightFeature(e) {
+            highlightLayer = e.target;
+
+            if (e.target.feature.geometry.type === 'LineString' || e.target.feature.geometry.type === 'MultiLineString') {
+              highlightLayer.setStyle({
+                color: 'rgba(255, 255, 0, 1.00)',
+              });
+            } else {
+              highlightLayer.setStyle({
+                fillColor: 'rgba(255, 255, 0, 1.00)',
+                fillOpacity: 1
+              });
+            }
+        }
+        var map = L.map('map', {
+            zoomControl:false, maxZoom:28, minZoom:1
+        }).fitBounds([[14.022580251940882,-87.31526209412345],[14.146989763705022,-87.10617386633473]]);
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/qgis2web/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        // remove popup's row if "visible-with-data"
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        // modify popup if contains media
+        function addClassToPopupIfMedia(content, popup) {
+            var tempDiv = document.createElement('div');
+            tempDiv.innerHTML = content;
+            var imgTd = tempDiv.querySelector('td img');
+            if (imgTd) {
+                var src = imgTd.getAttribute('src');
+                if (/\.(jpg|jpeg|png|gif|bmp|webp|avif)$/i.test(src)) {
+                    popup._contentNode.classList.add('media');
+                    var img = popup._contentNode.querySelector('td img');
+                    if (img) {
+                        // If already loaded (cache), update immediately
+                        if (img.complete && img.naturalHeight > 0) {
+                            popup.update();
+                        } else {
+                            img.addEventListener('load', function() {
+                                popup.update();
+                            });
+                            img.addEventListener('error', function() {
+                                popup.update();
+                            });
+                        }
+                    }
+                } else if (/\.(mp3|wav|ogg|aac)$/i.test(src)) {
+                    var audio = document.createElement('audio');
+                    audio.controls = true;
+                    audio.src = src;
+                    imgTd.parentNode.replaceChild(audio, imgTd);
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else if (/\.(mp4|webm|ogg|mov)$/i.test(src)) {
+                    var video = document.createElement('video');
+                    video.controls = true;
+                    video.src = src;
+                    video.style.width = "400px";
+                    video.style.height = "300px";
+                    video.style.maxHeight = "60vh";
+                    video.style.maxWidth = "60vw";
+                    imgTd.parentNode.replaceChild(video, imgTd);
+                    popup._contentNode.classList.add('media');
+                    // Aggiorna il popup quando il video carica i metadati
+                    video.addEventListener('loadedmetadata', function() {
+                        popup.update();
+                    });
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else {
+                    popup._contentNode.classList.remove('media');
+                }
+            } else {
+                popup._contentNode.classList.remove('media');
+            }
+        }
+        var zoomControl = L.control.zoom({
+            position: 'topleft'
+        }).addTo(map);
+        L.control.locate({locateOptions: {maxZoom: 19}}).addTo(map);
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+        }
+        map.createPane('pane_GoogleRoad_0');
+        map.getPane('pane_GoogleRoad_0').style.zIndex = 400;
+        var layer_GoogleRoad_0 = L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+            pane: 'pane_GoogleRoad_0',
+            opacity: 1.0,
+            attribution: '<a href="https://www.google.at/permissions/geoguidelines/attr-guide.html">Map data ©2015 Google</a>',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 20
+        });
+        layer_GoogleRoad_0;
+        map.addLayer(layer_GoogleRoad_0);
+        function getPopupContent_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1(properties) {
+            return '<table>\
+                    <tr>\
+                        <td colspan="2">' + (properties['GEOCODIGO'] != null ? autolinker.link(String(properties['GEOCODIGO']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (properties['NOMBRE'] != null ? autolinker.link(String(properties['NOMBRE']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (properties['COD_ALDEA'] != null ? autolinker.link(String(properties['COD_ALDEA']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (properties['COD_MUNI'] != null ? autolinker.link(String(properties['COD_MUNI']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (properties['COD_DEPTO'] != null ? autolinker.link(String(properties['COD_DEPTO']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (properties['Km2'] != null ? autolinker.link(String(properties['Km2']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (properties['Densidad'] != null ? autolinker.link(String(properties['Densidad']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (properties['Shape_Leng'] != null ? autolinker.link(String(properties['Shape_Leng']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (properties['Shape_Area'] != null ? autolinker.link(String(properties['Shape_Area']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (properties['Area_Has'] != null ? autolinker.link(String(properties['Area_Has']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+        }
+
+        map.createPane('pane_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1');
+        map.getPane('pane_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1').style.zIndex = 401;
+
+        var style_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1 = {'20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1': {
+                pane: 'pane_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.301)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(154,0,255,0.2785725490196079)',
+                interactive: true}};
+
+        var layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1 = L.vectorGrid.protobuf("data/20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1-pbf/{z}/{x}/{y}.pbf", {
+            rendererFactory: L.svg.tile,
+            vectorTileLayerStyles: style_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1,
+            pane: 'pane_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1',
+            minNativeZoom: 3,
+            maxNativeZoom: 4,
+            interactive: true
+        });
+        bounds_group.addLayer(layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1);
+        map.addLayer(layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1);
+        layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1.on('click', function(e) {
+            if (e.layer && e.layer.properties) {
+                var feature = { properties: e.layer.properties };
+                var content = removeEmptyRowsFromPopupContent(getPopupContent_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1(e.layer.properties), feature);
+                var popup = L.popup({ maxHeight: 400 })
+                    .setLatLng(e.latlng)
+                    .setContent(content)
+                    .openOn(map);
+                setTimeout(function() {
+                    addClassToPopupIfMedia(content, popup);
+                }, 10);
+            }
+        });
+        layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1.on('add', function() {
+            if (!map.hasLayer(label_layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1)) {
+                label_layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1.addTo(map);
+            }
+        });
+        layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1.on('remove', function() {
+            if (map.hasLayer(label_layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1)) {
+                map.removeLayer(label_layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1);
+            }
+        });
+        function pop_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <td class="visible-with-data" id="GEOCODIGO" colspan="2"><strong>GEOCODIGO</strong><br />' + (feature.properties['GEOCODIGO'] !== null ? autolinker.link(String(feature.properties['GEOCODIGO']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['NOMBRE'] !== null ? autolinker.link(String(feature.properties['NOMBRE']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['COD_ALDEA'] !== null ? autolinker.link(String(feature.properties['COD_ALDEA']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['COD_MUNI'] !== null ? autolinker.link(String(feature.properties['COD_MUNI']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['COD_DEPTO'] !== null ? autolinker.link(String(feature.properties['COD_DEPTO']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Km2'] !== null ? autolinker.link(String(feature.properties['Km2']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Densidad'] !== null ? autolinker.link(String(feature.properties['Densidad']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Shape_Leng'] !== null ? autolinker.link(String(feature.properties['Shape_Leng']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Shape_Area'] !== null ? autolinker.link(String(feature.properties['Shape_Area']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Area_Has'] !== null ? autolinker.link(String(feature.properties['Area_Has']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2_0() {
+            return {
+                pane: 'pane_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2',
+                opacity: 1,
+                color: 'rgba(35,35,35,0.305)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(232,113,141,0.29064705882352937)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2');
+        map.getPane('pane_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2').style.zIndex = 402;
+        map.getPane('pane_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2').style['mix-blend-mode'] = 'normal';
+        var layer_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2 = new L.geoJson(json_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2',
+            layerName: 'layer_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2',
+            pane: 'pane_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2',
+            onEachFeature: pop_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2,
+            style: style_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2_0,
+        });
+        bounds_group.addLayer(layer_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2);
+        map.addLayer(layer_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2);
+        function pop_ZONAS_INTERVENCION_OCHA_QGIS_3(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <th scope="row">nombre</th>\
+                        <td class="visible-with-data" id="nombre">' + (feature.properties['nombre'] !== null ? autolinker.link(String(feature.properties['nombre']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_ZONAS_INTERVENCION_OCHA_QGIS_3_0() {
+            return {
+                pane: 'pane_ZONAS_INTERVENCION_OCHA_QGIS_3',
+                opacity: 1,
+                color: 'rgba(35,35,35,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(0,0,255,0.9372549019607843)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_ZONAS_INTERVENCION_OCHA_QGIS_3');
+        map.getPane('pane_ZONAS_INTERVENCION_OCHA_QGIS_3').style.zIndex = 403;
+        map.getPane('pane_ZONAS_INTERVENCION_OCHA_QGIS_3').style['mix-blend-mode'] = 'normal';
+        var layer_ZONAS_INTERVENCION_OCHA_QGIS_3 = new L.geoJson(json_ZONAS_INTERVENCION_OCHA_QGIS_3, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_ZONAS_INTERVENCION_OCHA_QGIS_3',
+            layerName: 'layer_ZONAS_INTERVENCION_OCHA_QGIS_3',
+            pane: 'pane_ZONAS_INTERVENCION_OCHA_QGIS_3',
+            onEachFeature: pop_ZONAS_INTERVENCION_OCHA_QGIS_3,
+            style: style_ZONAS_INTERVENCION_OCHA_QGIS_3_0,
+        });
+        bounds_group.addLayer(layer_ZONAS_INTERVENCION_OCHA_QGIS_3);
+        map.addLayer(layer_ZONAS_INTERVENCION_OCHA_QGIS_3);
+        function pop_Centros_Salud_Intervenidosshp_4(feature, layer) {
+            layer.on({
+                mouseout: function(e) {
+                    for (var i in e.target._eventParents) {
+                        if (typeof e.target._eventParents[i].resetStyle === 'function') {
+                            e.target._eventParents[i].resetStyle(e.target);
+                        }
+                    }
+                },
+                mouseover: highlightFeature,
+            });
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['id'] !== null ? autolinker.link(String(feature.properties['id']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">centro</th>\
+                        <td>' + (feature.properties['centro'] !== null ? autolinker.link(String(feature.properties['centro']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['comunidad'] !== null ? autolinker.link(String(feature.properties['comunidad']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <th scope="row">municipio</th>\
+                        <td>' + (feature.properties['municipio'] !== null ? autolinker.link(String(feature.properties['municipio']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['departamen'] !== null ? autolinker.link(String(feature.properties['departamen']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['componente'] !== null ? autolinker.link(String(feature.properties['componente']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_Centros_Salud_Intervenidosshp_4_0() {
+            return {
+                pane: 'pane_Centros_Salud_Intervenidosshp_4',
+                radius: 10.4,
+                opacity: 1,
+                color: 'rgba(166,206,227,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 2.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(255,255,255,1.0)',
+                interactive: true,
+            }
+        }
+        function style_Centros_Salud_Intervenidosshp_4_1() {
+            return {
+                pane: 'pane_Centros_Salud_Intervenidosshp_4',
+                radius: 6.0,
+                opacity: 1,
+                color: 'rgba(31,120,180,1.0)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0,
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(31,120,180,1.0)',
+                interactive: true,
+            }
+        }
+        map.createPane('pane_Centros_Salud_Intervenidosshp_4');
+        map.getPane('pane_Centros_Salud_Intervenidosshp_4').style.zIndex = 404;
+        map.getPane('pane_Centros_Salud_Intervenidosshp_4').style['mix-blend-mode'] = 'normal';
+        var layer_Centros_Salud_Intervenidosshp_4 = new L.geoJson.multiStyle(json_Centros_Salud_Intervenidosshp_4, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_Centros_Salud_Intervenidosshp_4',
+            layerName: 'layer_Centros_Salud_Intervenidosshp_4',
+            pane: 'pane_Centros_Salud_Intervenidosshp_4',
+            onEachFeature: pop_Centros_Salud_Intervenidosshp_4,
+            pointToLayers: [function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.shapeMarker(latlng, style_Centros_Salud_Intervenidosshp_4_0(feature));
+            },function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.shapeMarker(latlng, style_Centros_Salud_Intervenidosshp_4_1(feature));
+            },
+        ]});
+        bounds_group.addLayer(layer_Centros_Salud_Intervenidosshp_4);
+        map.addLayer(layer_Centros_Salud_Intervenidosshp_4);
+        map.on("zoomend", function(e) {
+            if (map.getZoom() <= 19 && map.getZoom() >= 2) {
+                map.addLayer(layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1);
+            } else if (map.getZoom() > 19 || map.getZoom() < 2) {
+                map.removeLayer(layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 2) {
+                map.addLayer(layer_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2);
+            } else if (map.getZoom() > 19 || map.getZoom() < 2) {
+                map.removeLayer(layer_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 2) {
+                map.addLayer(layer_ZONAS_INTERVENCION_OCHA_QGIS_3);
+            } else if (map.getZoom() > 19 || map.getZoom() < 2) {
+                map.removeLayer(layer_ZONAS_INTERVENCION_OCHA_QGIS_3);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 2) {
+                map.addLayer(layer_Centros_Salud_Intervenidosshp_4);
+            } else if (map.getZoom() > 19 || map.getZoom() < 2) {
+                map.removeLayer(layer_Centros_Salud_Intervenidosshp_4);
+            }
+        });
+            if (map.getZoom() <= 19 && map.getZoom() >= 2) {
+                map.addLayer(layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1);
+            } else if (map.getZoom() > 19 || map.getZoom() < 2) {
+                map.removeLayer(layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 2) {
+                map.addLayer(layer_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2);
+            } else if (map.getZoom() > 19 || map.getZoom() < 2) {
+                map.removeLayer(layer_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 2) {
+                map.addLayer(layer_ZONAS_INTERVENCION_OCHA_QGIS_3);
+            } else if (map.getZoom() > 19 || map.getZoom() < 2) {
+                map.removeLayer(layer_ZONAS_INTERVENCION_OCHA_QGIS_3);
+            }
+            if (map.getZoom() <= 19 && map.getZoom() >= 2) {
+                map.addLayer(layer_Centros_Salud_Intervenidosshp_4);
+            } else if (map.getZoom() > 19 || map.getZoom() < 2) {
+                map.removeLayer(layer_Centros_Salud_Intervenidosshp_4);
+            }
+        setBounds();
+        var labeldata_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1 = {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.23882523204321, 14.228853933470427]}, "properties": {"NOMBRE": "Las Flores"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.268535591291, 14.245229180251046]}, "properties": {"NOMBRE": "Guangololo"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.074467941294, 14.209830203065469]}, "properties": {"NOMBRE": "San Juancito"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.29681654974229, 14.222195096637076]}, "properties": {"NOMBRE": "Coa Abajo"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.19807996073871, 14.327324455857214]}, "properties": {"NOMBRE": "La Venta"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.3857723077265, 14.323404147834799]}, "properties": {"NOMBRE": "San Francisco de Soroguara"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.28854578885638, 14.313817295092962]}, "properties": {"NOMBRE": "Monte Redondo"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.40635331419494, 14.276631225984355]}, "properties": {"NOMBRE": "Zambrano"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.30755192805273, 14.270015956572765]}, "properties": {"NOMBRE": "San Juan del R\u00edo Grande"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.15889180874532, 14.245570254273343]}, "properties": {"NOMBRE": "Cofrad\u00eda"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.26295983969915, 14.267658224645674]}, "properties": {"NOMBRE": "R\u00edo Hondo"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.38600453945867, 14.215269475306576]}, "properties": {"NOMBRE": "Amarateca"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.03204294597259, 14.222309623203062]}, "properties": {"NOMBRE": "El Naranjal"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.12683864642817, 14.191688803157001]}, "properties": {"NOMBRE": "Jutiapa"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.21826291982177, 14.184461047680712]}, "properties": {"NOMBRE": "R\u00edo Abajo"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.27236092559302, 14.211045861739706]}, "properties": {"NOMBRE": "Coa Arriba"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.27487746160611, 14.187072077999398]}, "properties": {"NOMBRE": "Soroguara"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.34525486567543, 14.175957611061866]}, "properties": {"NOMBRE": "T\u00e1mara"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.18320219186258, 14.164261261730992]}, "properties": {"NOMBRE": "Carpintero"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.14620816724381, 14.160717878969251]}, "properties": {"NOMBRE": "Los Jutes"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.12423998197407, 14.149545890305633]}, "properties": {"NOMBRE": "El Piligu\u00edn"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.38179234460866, 14.140274480082992]}, "properties": {"NOMBRE": "San Mat\u00edas"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.28035694738494, 14.150849554399366]}, "properties": {"NOMBRE": "Santa Cruz Abajo"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.24995569323276, 14.155327841984809]}, "properties": {"NOMBRE": "Guasculile"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.22717387759785, 14.148256384759963]}, "properties": {"NOMBRE": "Cerro Grande"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.20158917498577, 14.089270801578268]}, "properties": {"NOMBRE": "Distrito Central"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.31354716678246, 14.122857548559166]}, "properties": {"NOMBRE": "Santa Cruz Arriba"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.2735350431664, 14.122116365876144]}, "properties": {"NOMBRE": "La Cuesta No.2"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.12008295286964, 14.072841975115802]}, "properties": {"NOMBRE": "La Monta\u00f1ita"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.33005800417713, 14.070391471861257]}, "properties": {"NOMBRE": "Mateo"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.06932613465034, 14.077174775990002]}, "properties": {"NOMBRE": "San Juan del Rancho"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.2805749052334, 14.087558869684612]}, "properties": {"NOMBRE": "Nueva Aldea"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.28931016192318, 14.060410245055907]}, "properties": {"NOMBRE": "Las Tapias"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.35850833361005, 14.062447513645036]}, "properties": {"NOMBRE": "La Calera"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.26151221204596, 14.040801558498778]}, "properties": {"NOMBRE": "Las Casitas"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.17379370049893, 14.002985302898821]}, "properties": {"NOMBRE": "Jacaleapa"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.3540969652455, 14.033171682859823]}, "properties": {"NOMBRE": "La S\u00e1bana"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.1392529329009, 14.03506297604449]}, "properties": {"NOMBRE": "Villa Nueva"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.28546897559079, 14.005322620008927]}, "properties": {"NOMBRE": "Concepci\u00f3n de R\u00edo Grande"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.20291217317238, 14.024388608536599]}, "properties": {"NOMBRE": "Germania"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.22999552283993, 14.00474828562862]}, "properties": {"NOMBRE": "Yaguacire"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.18589161205374, 14.022568914385005]}, "properties": {"NOMBRE": "Santa Rosa"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.12912261865266, 13.964103099119809]}, "properties": {"NOMBRE": "Azacualpa"}}, {"type": "Feature", "geometry": {"type": "Point", "coordinates": [-87.19286313885786, 14.000333604471258]}, "properties": {"NOMBRE": "El Tizatillo"}}]};
+        var label_layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1 = L.geoJson(labeldata_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1, {
+            pointToLayer: function(feature, latlng) {
+                return L.marker(latlng, {
+                    icon: L.divIcon({
+                        className: 'css_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1',
+                        html: (feature.properties['NOMBRE'] !== null?String('<div style="color: #323232; font-size: 10pt; font-family: \'Open Sans\', sans-serif;">' + feature.properties['NOMBRE'] + '</div>').replace(/\\n/g, '<br>'):'')
+                    })
+                });
+            }
+        });
+        // Add label layer to map so markers render and _icon is available
+        label_layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1.addTo(map);
+        var il = 0;
+        label_layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1.eachLayer(function(layer) {
+            var context = {
+                feature: layer.feature,
+                variables: {}
+            };
+            labels.push(layer);
+            totalMarkers += 1;
+            addLabel(layer, il);
+            il++;
+        });
+        var i = 0;
+        layer_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2.eachLayer(function(layer) {
+            var context = {
+                feature: layer.feature,
+                variables: {}
+            };
+            layer.bindTooltip((layer.feature.properties['NOMBRE'] !== null?String('<div style="color: #323232; font-size: 10pt; font-family: \'Open Sans\', sans-serif;">' + layer.feature.properties['NOMBRE']).replace(/\\n/g, '<br>') + '</div>':''), {permanent: true, offset: [-0, -16], className: 'css_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2'});
+            labels.push(layer);
+            totalMarkers += 1;
+              layer.added = true;
+              addLabel(layer, i);
+              i++;
+        });
+        var i = 0;
+        layer_ZONAS_INTERVENCION_OCHA_QGIS_3.eachLayer(function(layer) {
+            var context = {
+                feature: layer.feature,
+                variables: {}
+            };
+            layer.bindTooltip((layer.feature.properties['nombre'] !== null?String('<div style="color: #323232; font-size: 10pt; font-family: \'Open Sans\', sans-serif;">' + layer.feature.properties['nombre']).replace(/\\n/g, '<br>') + '</div>':''), {permanent: true, offset: [-0, -16], className: 'css_ZONAS_INTERVENCION_OCHA_QGIS_3'});
+            labels.push(layer);
+            totalMarkers += 1;
+              layer.added = true;
+              addLabel(layer, i);
+              i++;
+        });
+        resetLabels([label_layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1,layer_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2,layer_ZONAS_INTERVENCION_OCHA_QGIS_3,layer_Centros_Salud_Intervenidosshp_4]);
+        map.on("zoomend", function(){
+            resetLabels([label_layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1,layer_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2,layer_ZONAS_INTERVENCION_OCHA_QGIS_3,layer_Centros_Salud_Intervenidosshp_4]);
+        });
+        map.on("layeradd", function(){
+            resetLabels([label_layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1,layer_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2,layer_ZONAS_INTERVENCION_OCHA_QGIS_3,layer_Centros_Salud_Intervenidosshp_4]);
+        });
+        map.on("layerremove", function(){
+            resetLabels([label_layer_20250624_112903_0801Distrito_Central0801DistritoCentralSHPAldeasshp_1,layer_20250513_112559_0703_Danl__0703DanlShpAldeasshp_2,layer_ZONAS_INTERVENCION_OCHA_QGIS_3,layer_Centros_Salud_Intervenidosshp_4]);
+        });
+        </script>
+    </body>
+</html>
